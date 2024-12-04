@@ -920,6 +920,24 @@ class PromptQueue:
             self.history[prompt[1]].update(history_result)
             self.server.queue_updated()
 
+            # 获取任务特定的 webhook_url
+            extra_data = prompt[3]
+            webhook_url = extra_data.get("webhook_url", None)
+
+            # 发送任务完成的 Webhook 通知
+            if webhook_url:
+                self.server.send_webhook(
+                    "task_completed",
+                    {
+                        "prompt_id": prompt[1],
+                        "status": status.status_str,
+                        "completed": status.completed,
+                        "messages": status.messages,
+                        "history_result": history_result,
+                    },
+                    webhook_url,
+                )   
+
     def get_current_queue(self):
         with self.mutex:
             out = []

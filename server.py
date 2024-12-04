@@ -1,6 +1,7 @@
 import os
 import sys
 import asyncio
+import requests
 import traceback
 
 import nodes
@@ -615,9 +616,12 @@ class PromptServer():
             if "prompt" in json_data:
                 prompt = json_data["prompt"]
                 valid = execution.validate_prompt(prompt)
-                extra_data = {}
-                if "extra_data" in json_data:
-                    extra_data = json_data["extra_data"]
+                extra_data = json_data.get("extra_data", {})
+
+                # 获取可选的 webhook_url
+                webhook_url = json_data.get("webhook_url", None)
+                if webhook_url:
+                    extra_data["webhook_url"] = webhook_url
 
                 if "client_id" in json_data:
                     extra_data["client_id"] = json_data["client_id"]
@@ -626,6 +630,16 @@ class PromptServer():
                     outputs_to_execute = valid[2]
                     self.prompt_queue.put((number, prompt_id, prompt, extra_data, outputs_to_execute))
                     response = {"prompt_id": prompt_id, "number": number, "node_errors": valid[3]}
+                    
+                    # 发送任务开始的 Webhook 通知（仅任务特定的 webhook_url）
+                    if webhook_url:
+                        self.send_webhook("task_started", {
+                            "prompt_id": prompt_id,
+                            "number": number,
+                            "prompt": prompt,
+                            "extra_data": extra_data
+                        }, webhook_url)
+
                     return web.json_response(response)
                 else:
                     logging.warning("invalid prompt: {}".format(valid[1]))
@@ -675,6 +689,8 @@ class PromptServer():
                     self.prompt_queue.delete_history_item(id_to_delete)
 
             return web.Response(status=200)
+
+
 
     async def setup(self):
         timeout = aiohttp.ClientTimeout(total=None) # no timeout
@@ -778,7 +794,28 @@ class PromptServer():
     def send_sync(self, event, data, sid=None):
         self.loop.call_soon_threadsafe(
             self.messages.put_nowait, (event, data, sid))
+    def send_webhook(self, event, data, webhook_url):
+        """
+        发送 Webhook 通知（同步版本）。
 
+        :param event: 事件类型，例如 "task_started" 或 "task_completed"
+        :param data: 需要发送的数据
+        :param webhook_url: Webhook 的目标 URL
+        """
+        if not webhook_url:
+            return
+        payload = {
+            "event": event,
+            "data": data
+        }
+        try:
+            response = requests.post(webhook_url, json=payload, timeout=5)
+            if response.status_code == 200:
+                logging.info(f"Webhook {event} 通知成功: {payload}")
+            else:
+                logging.error(f"Webhook {event} 通知失败，状态码: {response.status_code}")
+        except Exception as e:
+            logging.error(f"发送 Webhook {event} 时发生异常: {e}")
     def queue_updated(self):
         self.send_sync("status", { "status": self.get_queue_info() })
 
