@@ -620,13 +620,14 @@ class PromptServer():
 
                 # 获取可选的 webhook_url
                 webhook_url = json_data.get("webhook_url", None)
+                custom_prompt_id = json_data.get("prompt_id", None)
                 if webhook_url:
                     extra_data["webhook_url"] = webhook_url
 
                 if "client_id" in json_data:
                     extra_data["client_id"] = json_data["client_id"]
                 if valid[0]:
-                    prompt_id = str(uuid.uuid4())
+                    prompt_id = custom_prompt_id if custom_prompt_id else str(uuid.uuid4())
                     outputs_to_execute = valid[2]
                     self.prompt_queue.put((number, prompt_id, prompt, extra_data, outputs_to_execute))
                     response = {"prompt_id": prompt_id, "number": number, "node_errors": valid[3]}
